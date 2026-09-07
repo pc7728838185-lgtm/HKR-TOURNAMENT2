@@ -11,11 +11,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract project ZIP
+      - name: Extract ZIP
         run: |
           unzip -q HKR_Tournaments_V3_Online.zip
-          cd HKR_Tournaments_V3_Online/HKR_Tournaments_V3
-          npm install
+          echo "Extracted folders:"
+          ls -la
+
+      - name: Find project folder
+        run: |
+          PROJECT_DIR=$(find . -name package.json -not -path './.git/*' | head -1 | xargs dirname)
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Project found at: $PROJECT_DIR"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -26,16 +37,34 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build APK
-        working-directory: HKR_Tournaments_V3_Online/HKR_Tournaments_V3
+      - name: Prepare Capacitor
         run: |
+          cd "$PROJECT_DIR"
+
+          npm install
+          npm install -D typescript@5.8.3
+
+          mkdir -p www
+          cp index.html app.js auth-update.js config.js styles.css manifest.json www/ 2>/dev/null || true
+
+          if grep -q "webDir:'.'" capacitor.config.ts 2>/dev/null; then
+            sed -i "s/webDir:'.'/webDir:'www'/" capacitor.config.ts
+          fi
+
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
           npx cap sync android
-          cd android
+
+      - name: Build APK
+        run: |
+          cd "$PROJECT_DIR/android"
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HKR-Tournaments-APK
-          path: HKR_Tournaments_V3_Online/HKR_Tournaments_V3/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
